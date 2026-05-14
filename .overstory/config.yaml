@@ -7,14 +7,11 @@ project:
   canonicalBranch: master
   qualityGates:
     - name: Tests
-      command: bun test
+      command: pytest tests/ -v --asyncio-mode=auto -x -q
       description: all tests must pass
     - name: Lint
-      command: bun run lint
-      description: zero errors
-    - name: Typecheck
-      command: bun run typecheck
-      description: no TypeScript errors
+      command: "true"
+      description: no linter configured yet
 agents:
   manifestPath: .overstory/agent-manifest.json
   baseDir: .overstory/agent-defs
