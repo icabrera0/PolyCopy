@@ -74,6 +74,8 @@ def _parse_trader(raw: dict) -> Trader | None:
             first_trade_timestamp=first_trade,
             num_markets_traded=int(raw.get("marketsTraded") or raw.get("num_markets_traded") or 0),
             max_single_trade_pnl=float(raw.get("maxSingleTradePnl") or raw.get("max_single_trade_pnl") or 0.0),
+            vol=float(raw.get("volume") or raw.get("vol") or 0.0),
+            num_open_positions=int(raw.get("numOpenPositions") or raw.get("num_open_positions") or 0),
         )
     except Exception as exc:
         logger.debug(f"Failed to parse trader record: {exc}")
@@ -146,7 +148,7 @@ async def get_top_traders(
     category = category or settings.trader_category
     limit = limit or settings.top_traders_limit
 
-    url = f"{settings.polymarket_gamma_api}/leaderboard"
+    url = f"{settings.polymarket_data_api}/leaderboard"
     params = {"interval": "1m", "kind": "best", "limit": limit, "category": category.lower()}
 
     async with _make_client() as client:
@@ -168,7 +170,7 @@ async def get_top_traders(
 
 
 async def get_active_positions(trader_address: str) -> list[Position]:
-    url = f"{settings.polymarket_api_base}/positions"
+    url = f"{settings.polymarket_data_api}/v1/positions"
     params = {"user": trader_address, "sizeThreshold": "0.01", "sortBy": "CURRENT", "limit": 100}
 
     async with _make_client() as client:
@@ -230,3 +232,79 @@ async def fetch_all_positions(traders: list[Trader]) -> dict[str, list[Position]
         else:
             positions_by_trader[trader.address] = result  # type: ignore[assignment]
     return positions_by_trader
+
+
+async def get_trader_activity(address: str) -> dict:
+    """Fetch recent trading activity for a trader; returns vol and num_open_positions."""
+    url = f"{settings.polymarket_data_api}/activity"
+    params = {"user": address, "limit": 100}
+
+    async with _make_client() as client:
+        try:
+            data = await _get_with_retry(client, url, params=params)
+        except Exception as exc:
+            logger.warning(f"get_trader_activity failed for {address[:8]}: {exc}")
+            return {}
+
+    records: list[dict] = data if isinstance(data, list) else data.get("data", data.get("activity", []))
+
+    vol = sum(float(r.get("amount") or r.get("size") or r.get("volume") or 0.0) for r in records)
+    open_ids: set[str] = {
+        str(r.get("conditionId") or r.get("market_id") or r.get("marketId") or "")
+        for r in records
+        if r.get("outcome") or r.get("side")
+    } - {""}
+
+    return {"vol": vol, "num_open_positions": len(open_ids)}
+
+
+async def get_fill_price(token_id: str) -> float | None:
+    """Fetch the last fill price for a CLOB token."""
+    url = f"{settings.polymarket_api_base}/last-trade-price"
+    params = {"token_id": token_id}
+
+    async with _make_client() as client:
+        try:
+            data = await _get_with_retry(client, url, params=params)
+        except Exception as exc:
+            logger.warning(f"get_fill_price failed for {token_id}: {exc}")
+            return None
+
+    if isinstance(data, dict):
+        price = data.get("price") or data.get("lastTradePrice")
+        return float(price) if price is not None else None
+    return None
+
+
+async def get_current_price(token_id: str) -> float | None:
+    """Fetch the current midpoint price for a CLOB token."""
+    url = f"{settings.polymarket_api_base}/midpoint"
+    params = {"token_id": token_id}
+
+    async with _make_client() as client:
+        try:
+            data = await _get_with_retry(client, url, params=params)
+        except Exception as exc:
+            logger.warning(f"get_current_price failed for {token_id}: {exc}")
+            return None
+
+    if isinstance(data, dict):
+        price = data.get("mid") or data.get("midpoint")
+        return float(price) if price is not None else None
+    return None
+
+
+async def fetch_all_activities(traders: list[Trader]) -> dict[str, dict]:
+    """Fetch activity stats for all traders concurrently."""
+    results = await asyncio.gather(
+        *[get_trader_activity(t.address) for t in traders],
+        return_exceptions=True,
+    )
+    activities: dict[str, dict] = {}
+    for trader, result in zip(traders, results):
+        if isinstance(result, Exception):
+            logger.warning(f"Activity fetch error for {trader.address[:8]}: {result}")
+            activities[trader.address] = {}
+        else:
+            activities[trader.address] = result  # type: ignore[assignment]
+    return activities

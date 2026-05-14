@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime, timezone
 
@@ -37,9 +37,19 @@ def _passes_position_size(trader: Trader) -> bool:
     return trader.avg_position_size >= settings.min_avg_position_usd
 
 
-def _passes_win_rate(trader: Trader) -> bool:
-    """Win rate at or above min_win_rate floor."""
-    return trader.win_rate >= settings.min_win_rate
+def _passes_min_pnl(trader: Trader) -> bool:
+    """Total 30d PnL at or above min_pnl_30d."""
+    return trader.total_pnl_30d >= settings.min_pnl_30d
+
+
+def _passes_min_vol(trader: Trader) -> bool:
+    """Trading volume at or above min_vol."""
+    return trader.vol >= settings.min_vol
+
+
+def _passes_min_open_positions(trader: Trader) -> bool:
+    """Number of open positions at or above min_open_positions."""
+    return trader.num_open_positions >= settings.min_open_positions
 
 
 def _passes_pnl_consistency(trader: Trader) -> bool:
@@ -66,7 +76,9 @@ _FILTERS = [
     ("activity", _passes_activity),
     ("min_trades", _passes_min_trades),
     ("position_size", _passes_position_size),
-    ("win_rate", _passes_win_rate),
+    ("min_pnl", _passes_min_pnl),
+    ("min_vol", _passes_min_vol),
+    ("min_open_positions", _passes_min_open_positions),
     ("pnl_consistency", _passes_pnl_consistency),
     ("account_age", _passes_account_age),
     ("diversity", _passes_diversity),
@@ -74,7 +86,7 @@ _FILTERS = [
 
 
 def filter_traders(traders: list[Trader]) -> list[Trader]:
-    """Apply all 7 filters and return traders that pass, each with a quality_score."""
+    """Apply all filters and return traders that pass, each with a quality_score."""
     passed: list[Trader] = []
     for trader in traders:
         failed: list[str] = []
@@ -92,20 +104,14 @@ def filter_traders(traders: list[Trader]) -> list[Trader]:
 
 
 def score_trader(trader: Trader) -> float:
-    """Composite quality score 0-100: PnL 40%, win rate 25%, activity 20%, diversity 15%."""
-    # PnL component: normalize relative to a reference of $10k 30d PnL
+    """Composite quality score 0-100: PnL 50%, activity 30%, diversity 20%."""
     pnl_ref = 10_000.0
-    pnl_score = min(trader.total_pnl_30d / pnl_ref, 1.0) * 40.0 if trader.total_pnl_30d > 0 else 0.0
+    pnl_score = min(trader.total_pnl_30d / pnl_ref, 1.0) * 50.0 if trader.total_pnl_30d > 0 else 0.0
 
-    # Win rate component: scale 0-1 win rate to 0-25
-    win_rate_score = min(trader.win_rate, 1.0) * 25.0
-
-    # Activity component: reward recency; 0 days ago = full score, last_active_days = 0
     days_inactive = _days_since(trader.last_active_timestamp)
-    activity_score = max(0.0, 1.0 - days_inactive / settings.last_active_days) * 20.0
+    activity_score = max(0.0, 1.0 - days_inactive / settings.last_active_days) * 30.0
 
-    # Diversity component: scale markets traded; cap at 10
-    diversity_score = min(trader.num_markets_traded / 10.0, 1.0) * 15.0
+    diversity_score = min(trader.num_markets_traded / 10.0, 1.0) * 20.0
 
-    total = pnl_score + win_rate_score + activity_score + diversity_score
+    total = pnl_score + activity_score + diversity_score
     return round(min(max(total, _MIN_SCORE), _MAX_SCORE), 2)

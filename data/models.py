@@ -23,6 +23,8 @@ class Trader(BaseModel):
     first_trade_timestamp: datetime | None = None
     num_markets_traded: int = 0
     max_single_trade_pnl: float = 0.0
+    vol: float = 0.0
+    num_open_positions: int = 0
 
 
 class Position(BaseModel):

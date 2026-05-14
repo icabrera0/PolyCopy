@@ -11,6 +11,7 @@ class Settings(BaseSettings):
 
     # Polymarket
     polymarket_api_base: str = "https://clob.polymarket.com"
+    polymarket_data_api: str = "https://data-api.polymarket.com"
     polymarket_gamma_api: str = "https://gamma-api.polymarket.com"
     trader_category: str = "Crypto"
     top_traders_limit: int = 50
@@ -19,7 +20,9 @@ class Settings(BaseSettings):
     # Filtering
     min_trades_30d: int = 10
     min_avg_position_usd: float = 50.0
-    min_win_rate: float = 0.40
+    min_pnl_30d: float = 0.0
+    min_vol: float = 0.0
+    min_open_positions: int = 0
     max_single_trade_pnl_ratio: float = 0.80
     min_account_age_days: int = 30
     min_market_diversity: int = 3
