@@ -7,7 +7,7 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 ## Overall Progress
 
 **Phase:** Paper Trading (Weeks 1–4)
-**Status:** ~55% complete — core data/fetch/filter layer done, consensus/trade/scheduler/dashboard pending.
+**Status:** ~90% complete — all core modules built, only tests remain.
 
 ---
 
@@ -20,12 +20,12 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 | Database | `data/db.py` | ✅ Done | aiosqlite, all 5 tables, full CRUD |
 | Fetcher | `core/fetcher.py` | ✅ Done | async httpx, retry/backoff, 60s cache, concurrent gather |
 | Filter | `core/filter.py` | ✅ Done | 7 filters, composite scoring |
-| Consensus | `core/consensus.py` | ⏳ Pending | detect_consensus, Signal generation, thresholds |
-| Trader | `core/trader.py` | ⏳ Pending | open/close PaperTrade, dedup check, expiry |
-| Scheduler | `core/scheduler.py` | ⏳ Pending | APScheduler pipeline loop |
-| Discord | `notifications/discord_webhook.py` | ⏳ Pending | embeds for open/close/status/summary |
-| Dashboard | `dashboard/app.py` | ⏳ Pending | Streamlit 6-page UI |
-| Tests | `tests/` | ⏳ Pending | pytest + pytest-asyncio |
+| Consensus | `core/consensus.py` | ✅ Done | detect_consensus, STRONG/MODERATE/WEAK, time-window guard |
+| Trader | `core/trader.py` | ✅ Done | open/close PaperTrade, dedup check, expiry |
+| Scheduler | `core/scheduler.py` | ✅ Done | APScheduler pipeline loop every 30s |
+| Discord | `notifications/discord_webhook.py` | ✅ Done | embeds for open/close/status/daily summary |
+| Dashboard | `dashboard/app.py` | ✅ Done | Streamlit 6-page UI with plotly |
+| Tests | `tests/` | ⏳ Pending | pytest + pytest-asyncio (PolyCopy-4cde) |
 
 ---
 
@@ -33,24 +33,46 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 
 | ID | Title | Status |
 |----|-------|--------|
-| PolyCopy-780d | Build project scaffold and config layer | ✅ Merged |
-| PolyCopy-0b41 | Build data models and database layer | ✅ Merged |
-| PolyCopy-2be9 | Build core fetcher and filter modules | ✅ Merged |
-| PolyCopy-c6f1 | Build consensus engine and trader execution | 🔄 In Progress |
-| PolyCopy-d6ac | Build scheduler, Discord notifier, and Streamlit dashboard | 🔄 In Progress |
-| PolyCopy-4cde | Build test suite | ⏳ Open |
-| PolyCopy-8922 | Create and maintain status.md | 🔄 In Progress |
+| PolyCopy-780d | Build project scaffold and config layer | ✅ Closed |
+| PolyCopy-0b41 | Build data models and database layer | ✅ Closed |
+| PolyCopy-2be9 | Build core fetcher and filter modules | ✅ Closed |
+| PolyCopy-c6f1 | Build consensus engine and trader execution | ✅ Closed |
+| PolyCopy-d6ac | Build scheduler, Discord notifier, and Streamlit dashboard | ✅ Closed |
+| PolyCopy-4cde | Build test suite | ⏳ Open — next task |
+| PolyCopy-8922 | Create and maintain status.md | ✅ Closed |
 
 ---
 
 ## Git State
 
 - **Branch:** `master`
-- **Latest commit:** `fix(data): restore models.py after bad AI merge resolution`
-- **Active worktrees (stale, no new commits):**
+- **Latest commit:** `feat: implement consensus, trader, scheduler, discord, dashboard, status.md`
+- **Stale worktrees (nothing useful, safe to clean):**
   - `overstory/builder-consensus/PolyCopy-c6f1`
   - `overstory/builder-scheduler/PolyCopy-d6ac`
   - `overstory/builder-status/PolyCopy-8922`
+
+---
+
+## To Run
+
+```bash
+# Install deps
+pip install -r requirements.txt
+
+# Set env
+cp .env.example .env
+# Edit .env — set DISCORD_WEBHOOK_URL if desired
+
+# Run bot
+python -m core.scheduler
+
+# Run dashboard (separate terminal)
+streamlit run dashboard/app.py --server.port 8501
+
+# Run tests
+pytest tests/ -v --asyncio-mode=auto
+```
 
 ---
 
@@ -58,21 +80,20 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 
 - **Path bug fixed:** patched `manager.ts` line 101 — Windows backslash vs forward-slash path comparison
 - **Quality gates:** updated `config.yaml` from `bun test` → `pytest tests/ -v --asyncio-mode=auto -x -q`
-- **AI merge issue:** overstory AI resolver wrote meta-text into `data/models.py` — fixed manually; avoid `ov merge` with AI resolve on Python files
+- **AI merge issue:** overstory AI resolver wrote meta-text into `data/models.py` — fixed manually; be careful with `ov merge` AI resolve on Python files
 - **Coordinator tmux:** does not start on this machine — using `ov sling` directly as coordinator instead
-- **Headless mode:** `claudeHeadlessByDefault: true` works; builders write code but fail to commit because old overlays hardcode `bun test` quality gates
+- **Headless mode:** `claudeHeadlessByDefault: true` works; builders write code but old overlays hardcode `bun test` quality gates so they fail to commit — workaround: commit manually after sling
 
 ---
 
-## Next Steps (to resume this session)
+## Next Steps
 
-1. Implement `core/consensus.py` — detect_consensus, Signal, thresholds STRONG/MODERATE/WEAK
-2. Implement `core/trader.py` — open_trade, close_trade, check_and_close_expired_trades
-3. Implement `core/scheduler.py` — APScheduler pipeline loop every 30s
-4. Implement `notifications/discord_webhook.py` — Discord embeds
-5. Implement `dashboard/app.py` — Streamlit 6-page dashboard
-6. Write tests in `tests/`
-7. Install dependencies: `pip install -r requirements.txt` and verify `python -m core.scheduler` starts
+1. **Write tests** — `ov sling PolyCopy-4cde --capability builder --name builder-tests --depth 1`
+   - Tests for: filter.py (all 7 filters), consensus.py (thresholds, time guards), trader.py (open/close/dedup), db.py (CRUD)
+2. **Verify imports** — run `python -c "from core.scheduler import main"` to catch any import errors
+3. **Clean stale worktrees** — `ov worktree clean --completed`
+4. **Set .env** — fill in `DISCORD_WEBHOOK_URL` and test notifications
+5. **Paper trading run** — start bot and monitor for 24h
 
 ---
 
@@ -81,5 +102,5 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 - **OS:** Windows 11 / Git Bash (MSYS2)
 - **Python:** 3.11+
 - **Working dir:** `E:\AI\PolyCopy`
-- **DB path:** `./data/polymarket_bot.db` (created at runtime)
+- **DB path:** `./data/polymarket_bot.db` (created at runtime by `db.init_db()`)
 - **Discord webhook:** set `DISCORD_WEBHOOK_URL` in `.env`
