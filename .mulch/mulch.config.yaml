@@ -3,6 +3,7 @@ domains:
   config: {}
   testing: {}
   api: {}
+  consensus: {}
 governance:
   max_entries: 100
   warn_entries: 150
