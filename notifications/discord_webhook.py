@@ -47,7 +47,7 @@ async def send_trade_opened(trade: PaperTrade) -> None:
         _field("Market", trade.market_title[:50], inline=False),
         _field("Outcome", trade.outcome),
         _field("Signal", f"{strength_emoji} {trade.signal_strength}"),
-        _field("Consensus", f"{trade.consensus_pct:.1f}% ({trade.trader_count} traders)"),
+        _field("Consensus", f"{trade.weighted_consensus_pct:.1f}% ({trade.trader_count} traders)"),
         _field("Entry Price", f"${trade.entry_price:.4f}"),
         _field("Stake", f"${trade.stake:.2f}"),
     ]

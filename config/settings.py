@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     consensus_strong_threshold: float = 0.70
     consensus_moderate_threshold: float = 0.50
     consensus_weak_threshold: float = 0.35
+    min_consensus_traders: int = 3
     min_market_time_remaining_seconds: int = 120
     max_market_horizon_hours: int = 24
 

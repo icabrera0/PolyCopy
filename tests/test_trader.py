@@ -20,7 +20,8 @@ def _make_signal(**overrides) -> Signal:
         outcome="YES",
         trader_count=7,
         total_filtered_traders=10,
-        consensus_pct=70.0,
+        raw_consensus_pct=70.0,
+        weighted_consensus_pct=70.0,
         avg_entry_price=0.65,
         market_closes_at=_utc_now() + timedelta(hours=12),
         signal_strength="STRONG",
@@ -37,7 +38,7 @@ def _make_trade(**overrides) -> PaperTrade:
         entry_price=0.65,
         stake=100.0,
         signal_strength="STRONG",
-        consensus_pct=70.0,
+        weighted_consensus_pct=70.0,
         trader_count=7,
         status="OPEN",
         opened_at=_utc_now() - timedelta(hours=1),
@@ -91,14 +92,14 @@ async def test_open_trade_uses_default_stake():
 
 
 async def test_open_trade_propagates_signal_fields():
-    sig = _make_signal(signal_strength="MODERATE", consensus_pct=55.0, trader_count=5)
+    sig = _make_signal(signal_strength="MODERATE", weighted_consensus_pct=55.0, trader_count=5)
     with patch("core.trader.db.trade_exists", new=AsyncMock(return_value=False)), \
          patch("core.trader.db.open_trade", new=AsyncMock()):
         trade = await open_trade(sig, ":memory:")
 
     assert trade is not None
     assert trade.signal_strength == "MODERATE"
-    assert trade.consensus_pct == pytest.approx(55.0)
+    assert trade.weighted_consensus_pct == pytest.approx(55.0)
     assert trade.trader_count == 5
 
 

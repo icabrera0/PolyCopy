@@ -52,7 +52,8 @@ class Signal(BaseModel):
     outcome: str
     trader_count: int
     total_filtered_traders: int
-    consensus_pct: float
+    raw_consensus_pct: float
+    weighted_consensus_pct: float
     avg_entry_price: float
     market_closes_at: datetime
     signal_strength: Literal["STRONG", "MODERATE", "WEAK"]
@@ -67,7 +68,7 @@ class PaperTrade(BaseModel):
     entry_price: float
     stake: float
     signal_strength: str
-    consensus_pct: float
+    weighted_consensus_pct: float
     trader_count: int
     status: Literal["OPEN", "CLOSED", "EXPIRED"] = "OPEN"
     opened_at: datetime = Field(default_factory=datetime.utcnow)
