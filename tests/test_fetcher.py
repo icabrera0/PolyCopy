@@ -346,3 +346,136 @@ async def test_fetch_all_positions_concurrent():
 
     assert set(result.keys()) == {"0xAAA", "0xBBB"}
     assert len(result["0xAAA"]) == 1
+
+
+# --- get_trader_activity (mocked HTTP) ---
+
+@pytest.mark.asyncio
+async def test_get_trader_activity_success():
+    from core.fetcher import get_trader_activity
+    raw_list = [
+        {"conditionId": "mkt-1", "outcome": "YES", "amount": 100.0},
+        {"conditionId": "mkt-2", "outcome": "NO", "amount": 50.0},
+    ]
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(return_value=raw_list)
+
+    with patch("core.fetcher._make_client") as mock_make_client:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_make_client.return_value = mock_client
+
+        result = await get_trader_activity("0xABC")
+
+    assert result["vol"] == pytest.approx(150.0)
+    assert result["num_open_positions"] == 2
+
+
+@pytest.mark.asyncio
+async def test_get_trader_activity_api_error_returns_empty():
+    from core.fetcher import get_trader_activity
+    with patch("core.fetcher._make_client") as mock_make_client:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        mock_make_client.return_value = mock_client
+
+        result = await get_trader_activity("0xABC")
+
+    assert result == {}
+
+
+# --- get_fill_price (mocked HTTP) ---
+
+@pytest.mark.asyncio
+async def test_get_fill_price_success():
+    from core.fetcher import get_fill_price
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(return_value={"price": "0.65"})
+
+    with patch("core.fetcher._make_client") as mock_make_client:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_make_client.return_value = mock_client
+
+        price = await get_fill_price("token-123")
+
+    assert price == pytest.approx(0.65)
+
+
+@pytest.mark.asyncio
+async def test_get_fill_price_api_error_returns_none():
+    from core.fetcher import get_fill_price
+    with patch("core.fetcher._make_client") as mock_make_client:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        mock_make_client.return_value = mock_client
+
+        price = await get_fill_price("token-123")
+
+    assert price is None
+
+
+# --- get_current_price (mocked HTTP) ---
+
+@pytest.mark.asyncio
+async def test_get_current_price_success():
+    from core.fetcher import get_current_price
+    mock_resp = MagicMock()
+    mock_resp.raise_for_status = MagicMock()
+    mock_resp.json = MagicMock(return_value={"mid": "0.50"})
+
+    with patch("core.fetcher._make_client") as mock_make_client:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+        mock_make_client.return_value = mock_client
+
+        price = await get_current_price("token-123")
+
+    assert price == pytest.approx(0.50)
+
+
+@pytest.mark.asyncio
+async def test_get_current_price_api_error_returns_none():
+    from core.fetcher import get_current_price
+    with patch("core.fetcher._make_client") as mock_make_client:
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        mock_make_client.return_value = mock_client
+
+        price = await get_current_price("token-123")
+
+    assert price is None
+
+
+# --- fetch_all_activities ---
+
+@pytest.mark.asyncio
+async def test_fetch_all_activities_concurrent():
+    from core.fetcher import fetch_all_activities
+    t1 = Trader(address="0xAAA", last_active_timestamp=_utc_now(), total_pnl_30d=100.0,
+                num_trades_30d=10, win_rate=0.5, avg_position_size=50.0)
+    t2 = Trader(address="0xBBB", last_active_timestamp=_utc_now(), total_pnl_30d=200.0,
+                num_trades_30d=20, win_rate=0.6, avg_position_size=75.0)
+
+    async def mock_activity(addr):
+        return {"vol": 100.0, "num_open_positions": 2}
+
+    with patch("core.fetcher.get_trader_activity", side_effect=mock_activity):
+        result = await fetch_all_activities([t1, t2])
+
+    assert set(result.keys()) == {"0xAAA", "0xBBB"}
+    assert result["0xAAA"]["vol"] == 100.0

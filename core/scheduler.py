@@ -7,7 +7,7 @@ from loguru import logger
 
 from config.settings import settings
 from core.consensus import detect_consensus
-from core.fetcher import fetch_all_positions, get_market_metadata, get_top_traders
+from core.fetcher import fetch_all_activities, fetch_all_positions, get_market_metadata, get_top_traders
 from core.filter import filter_traders
 from core.trader import check_and_close_expired_trades, open_trade
 from data import db
@@ -26,7 +26,17 @@ async def run_pipeline() -> None:
             logger.warning("No traders fetched, skipping tick")
             return
 
-        # 2. Filter
+        # 2. Enrich traders with activity data (vol, num_open_positions)
+        activities = await fetch_all_activities(traders)
+        traders = [
+            t.model_copy(update={
+                "vol": activities.get(t.address, {}).get("vol", 0.0),
+                "num_open_positions": activities.get(t.address, {}).get("num_open_positions", 0),
+            })
+            for t in traders
+        ]
+
+        # 3. Filter
         filtered = filter_traders(traders)
         if not filtered:
             logger.warning("No traders passed filters, skipping tick")
@@ -34,10 +44,10 @@ async def run_pipeline() -> None:
 
         await db.upsert_traders(_DB_PATH, filtered)
 
-        # 3. Gather positions concurrently
+        # 4. Gather positions concurrently
         positions_by_trader = await fetch_all_positions(filtered)
 
-        # 4. Fetch market metadata for all unique market IDs
+        # 5. Fetch market metadata for all unique market IDs
         market_ids = {
             pos.market_id
             for positions in positions_by_trader.values()
@@ -49,7 +59,7 @@ async def run_pipeline() -> None:
             if m:
                 market_metadata[mid] = m
 
-        # 5. Detect consensus
+        # 6. Detect consensus
         signals = detect_consensus(positions_by_trader, market_metadata)
 
         for signal in signals:
@@ -59,12 +69,12 @@ async def run_pipeline() -> None:
                 if not settings.discord_notify_weak_signals:
                     continue
 
-            # 6. Open trade (dedup check inside)
+            # 7. Open trade (dedup check inside)
             trade = await open_trade(signal, _DB_PATH)
             if trade:
                 await send_trade_opened(trade)
 
-        # 7. Check and close expired/resolved trades
+        # 8. Check and close expired/resolved trades
         closed_trades = await check_and_close_expired_trades(_DB_PATH)
         for trade in closed_trades:
             await send_trade_closed(trade)
