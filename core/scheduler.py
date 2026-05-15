@@ -61,8 +61,9 @@ async def run_pipeline() -> None:
             if m:
                 market_metadata[mid] = m
 
-        # 6. Detect consensus
-        signals = detect_consensus(positions_by_trader, market_metadata)
+        # 6. Detect consensus (weighted by each trader's period PnL)
+        trader_pnl = {t.address: t.total_pnl_30d for t in filtered}
+        signals = detect_consensus(positions_by_trader, market_metadata, trader_pnl=trader_pnl)
 
         for signal in signals:
             await db.insert_signal(_DB_PATH, signal)

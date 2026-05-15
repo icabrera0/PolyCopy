@@ -7,7 +7,7 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 ## Overall Progress
 
 **Phase:** Paper Trading (Weeks 1–4)
-**Status:** Code complete (104 tests passing). API layer refactor complete (PolyCopy-43de ✅).
+**Status:** Code complete (109 tests passing). Leaderboard switched to WEEK, min_pnl lowered to $100, trader_pnl now wired into consensus (2026-05-15).
 
 ---
 
@@ -93,12 +93,12 @@ Scoring: PnL 40%, volume 25%, activity 20%, diversity 15%
 | Database | `data/db.py` | ✅ Done | aiosqlite, all 5 tables, full CRUD |
 | Fetcher | `core/fetcher.py` | ✅ Done | /v1/positions; get_trader_activity, get_fill_price, get_current_price |
 | Filter | `core/filter.py` | ✅ Done | 7 filters (no win_rate/pos_size/account_age); PnL 40%/vol 25%/activity 20%/diversity 15% scoring |
-| Consensus | `core/consensus.py` | ✅ Done | detect_consensus, STRONG/MODERATE/WEAK, time-window guard |
+| Consensus | `core/consensus.py` | ✅ Done | PnL-weighted scoring, min trader floor (3), STRONG/MODERATE/WEAK, time-window guard |
 | Trader | `core/trader.py` | ✅ Done | open/close PaperTrade, dedup check, expiry |
 | Scheduler | `core/scheduler.py` | ✅ Done | fetch_all_activities enriches traders before filter |
 | Discord | `notifications/discord_webhook.py` | ✅ Done | embeds for open/close/status/daily summary |
 | Dashboard | `dashboard/app.py` | ✅ Done | Streamlit 6-page UI with plotly |
-| Tests | `tests/` | ✅ Done | 104 tests passing |
+| Tests | `tests/` | ✅ Done | 109 tests passing |
 
 ---
 
@@ -114,27 +114,24 @@ Scoring: PnL 40%, volume 25%, activity 20%, diversity 15%
 | PolyCopy-4cde | Build test suite | ✅ Closed |
 | PolyCopy-8922 | Create and maintain status.md | ✅ Closed |
 | PolyCopy-43de | Refactor API layer to verified Polymarket endpoints (v2 spec) | ✅ Closed |
+| PolyCopy-6795 | Weighted PnL consensus scoring | ✅ Closed |
+| PolyCopy-53af | Minimum absolute trader count floor for consensus | ✅ Closed |
 
 ---
 
-## After PolyCopy-43de Completes
+## Consensus Improvements (PolyCopy-6795 + PolyCopy-53af) ✅ 2026-05-15
 
-If builder exits without committing (quality gate failure):
-```bash
-# Check worktree
-git -C overstory/builder-api-refactor/PolyCopy-43de status
-# Stage and commit manually
-git -C overstory/builder-api-refactor/PolyCopy-43de add data/models.py config/settings.py core/fetcher.py core/filter.py core/scheduler.py
-git -C overstory/builder-api-refactor/PolyCopy-43de commit -m "refactor: align API layer with verified Polymarket endpoints (spec v2.0)"
-# Then merge
-ov merge PolyCopy-43de
-```
+Merged via `overstory/consensus-weighted-scoring/PolyCopy-6795`. 109 tests passing.
 
-After merge, update tests:
-```bash
-pytest tests/ -v --asyncio-mode=auto
-```
-Then update `status.md` module table once all modules show ✅.
+### What changed
+- `Signal` model: `consensus_pct` → `raw_consensus_pct` + `weighted_consensus_pct`
+- `PaperTrade` model: `consensus_pct` → `weighted_consensus_pct`
+- `detect_consensus(...)` accepts optional `trader_pnl: dict[str, float]`; thresholds use weighted pct
+- `min_consensus_traders = 3` added to settings; blocks signals with < 3 traders regardless of %
+- Negative PnL traders clamped to weight 1.0 (never drag weighted score negative)
+- `spec.md` updated with realistic 3–8 trader pool explanation
+
+## After PolyCopy-43de Completes (DONE ✅)
 
 ---
 

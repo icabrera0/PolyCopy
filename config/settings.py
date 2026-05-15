@@ -16,10 +16,11 @@ class Settings(BaseSettings):
     trader_category: str = "Crypto"
     top_traders_limit: int = 50
     polling_interval_seconds: int = 30
+    leaderboard_time_period: str = "WEEK"
 
     # Filtering
     min_trades: int = 5
-    min_pnl: float = 500.0
+    min_pnl: float = 100.0
     min_vol: float = 1000.0
     min_open_positions: int = 1
     max_single_trade_pnl_ratio: float = 0.80

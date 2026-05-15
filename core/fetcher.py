@@ -155,7 +155,7 @@ async def get_top_traders(
     pages_needed = (limit + _LEADERBOARD_PAGE_SIZE - 1) // _LEADERBOARD_PAGE_SIZE
     base_params = {
         "category": category,
-        "timePeriod": "MONTH",
+        "timePeriod": settings.leaderboard_time_period,
         "orderBy": "PNL",
         "limit": _LEADERBOARD_PAGE_SIZE,
     }
