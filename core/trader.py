@@ -23,7 +23,7 @@ async def open_trade(signal: Signal, db_path: str) -> PaperTrade | None:
         entry_price=signal.avg_entry_price,
         stake=settings.paper_stake_per_trade,
         signal_strength=signal.signal_strength,
-        consensus_pct=signal.consensus_pct,
+        weighted_consensus_pct=signal.weighted_consensus_pct,
         trader_count=signal.trader_count,
     )
     await db.open_trade(db_path, trade)

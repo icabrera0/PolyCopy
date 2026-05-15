@@ -104,7 +104,7 @@ elif page == "🔴 Live Signals":
     else:
         def _color_strength(val):
             return {"STRONG": "background-color:#00FF8833", "MODERATE": "background-color:#FFFF0033", "WEAK": "background-color:#2196F333"}.get(val, "")
-        cols = ["generated_at", "market_title", "outcome", "signal_strength", "consensus_pct", "trader_count", "avg_entry_price"]
+        cols = ["generated_at", "market_title", "outcome", "signal_strength", "weighted_consensus_pct", "trader_count", "avg_entry_price"]
         display = signals[[c for c in cols if c in signals.columns]].head(50)
         st.dataframe(display.style.applymap(_color_strength, subset=["signal_strength"]), use_container_width=True)
 
@@ -115,7 +115,7 @@ elif page == "📂 Open Trades":
     if open_df.empty:
         st.info("No open trades.")
     else:
-        cols = ["market_title", "outcome", "signal_strength", "entry_price", "stake", "consensus_pct", "opened_at"]
+        cols = ["market_title", "outcome", "signal_strength", "entry_price", "stake", "weighted_consensus_pct", "opened_at"]
         st.dataframe(open_df[[c for c in cols if c in open_df.columns]], use_container_width=True)
 
 # ── Trade History ─────────────────────────────────────────────────────────────

@@ -34,7 +34,8 @@ CREATE TABLE IF NOT EXISTS signals (
     outcome TEXT,
     trader_count INTEGER,
     total_filtered_traders INTEGER,
-    consensus_pct REAL,
+    raw_consensus_pct REAL,
+    weighted_consensus_pct REAL,
     avg_entry_price REAL,
     market_closes_at TEXT,
     signal_strength TEXT,
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     entry_price REAL,
     stake REAL,
     signal_strength TEXT,
-    consensus_pct REAL,
+    weighted_consensus_pct REAL,
     trader_count INTEGER,
     status TEXT DEFAULT 'OPEN',
     opened_at TEXT,
@@ -171,10 +172,11 @@ async def get_traders(db_path: str | Path) -> list[Trader]:
 async def insert_signal(db_path: str | Path, signal: Signal) -> None:
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT OR IGNORE INTO signals VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO signals VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 signal.id, signal.market_id, signal.market_title, signal.outcome,
-                signal.trader_count, signal.total_filtered_traders, signal.consensus_pct,
+                signal.trader_count, signal.total_filtered_traders,
+                signal.raw_consensus_pct, signal.weighted_consensus_pct,
                 signal.avg_entry_price, _iso(signal.market_closes_at),
                 signal.signal_strength, _iso(signal.generated_at),
             ),
@@ -194,7 +196,9 @@ async def get_recent_signals(db_path: str | Path, limit: int = 50) -> list[Signa
             id=r["id"], market_id=r["market_id"], market_title=r["market_title"],
             outcome=r["outcome"], trader_count=r["trader_count"],
             total_filtered_traders=r["total_filtered_traders"],
-            consensus_pct=r["consensus_pct"], avg_entry_price=r["avg_entry_price"],
+            raw_consensus_pct=r["raw_consensus_pct"],
+            weighted_consensus_pct=r["weighted_consensus_pct"],
+            avg_entry_price=r["avg_entry_price"],
             market_closes_at=_parse_dt(r["market_closes_at"]) or datetime.now(timezone.utc),
             signal_strength=r["signal_strength"],
             generated_at=_parse_dt(r["generated_at"]) or datetime.now(timezone.utc),
@@ -212,7 +216,7 @@ async def open_trade(db_path: str | Path, trade: PaperTrade) -> None:
             (
                 trade.id, trade.market_id, trade.market_title, trade.outcome,
                 trade.entry_price, trade.stake, trade.signal_strength,
-                trade.consensus_pct, trade.trader_count, trade.status,
+                trade.weighted_consensus_pct, trade.trader_count, trade.status,
                 _iso(trade.opened_at), _iso(trade.closed_at),
                 trade.resolution, trade.pnl, trade.exit_price,
             ),
@@ -279,7 +283,7 @@ def _row_to_trade(r: Any) -> PaperTrade:
     return PaperTrade(
         id=r["id"], market_id=r["market_id"], market_title=r["market_title"],
         outcome=r["outcome"], entry_price=r["entry_price"], stake=r["stake"],
-        signal_strength=r["signal_strength"], consensus_pct=r["consensus_pct"],
+        signal_strength=r["signal_strength"], weighted_consensus_pct=r["weighted_consensus_pct"],
         trader_count=r["trader_count"], status=r["status"],
         opened_at=_parse_dt(r["opened_at"]) or datetime.now(timezone.utc),
         closed_at=_parse_dt(r["closed_at"]),

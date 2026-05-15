@@ -158,31 +158,36 @@ polymarket-bot/
 **Responsibility:** Determine if a meaningful majority of filtered traders hold the same position on a market, and produce a trade signal.
 
 **Key functions:**
-- `detect_consensus(positions_by_trader: dict[str, list[Position]]) -> list[Signal]`
+- `detect_consensus(positions_by_trader: dict[str, list[Position]], market_metadata=None, trader_pnl=None) -> list[Signal]`
   - Groups positions by `market_id` + `outcome`
   - Counts how many traders hold each position
-  - Returns a `Signal` when consensus threshold is met
+  - Applies PnL-weighted scoring (primary threshold) and raw count scoring (display)
+  - Returns a `Signal` when consensus threshold met and min trader floor satisfied
 
 **Signal data model:**
 ```python
 class Signal(BaseModel):
     market_id: str
     market_title: str
-    outcome: str                  # e.g. "YES" / "NO" / "BTC UP"
-    trader_count: int             # how many traders hold this
-    total_filtered_traders: int   # denominator
-    consensus_pct: float          # trader_count / total * 100
-    avg_entry_price: float        # average entry price of signal traders
-    market_closes_at: datetime    # market resolution time
-    signal_strength: str          # "STRONG" / "MODERATE" / "WEAK"
+    outcome: str                      # e.g. "YES" / "NO" / "BTC UP"
+    trader_count: int                 # how many traders hold this
+    total_filtered_traders: int       # denominator
+    raw_consensus_pct: float          # trader_count / total * 100 (display only)
+    weighted_consensus_pct: float     # PnL-weighted pct (primary signal threshold)
+    avg_entry_price: float            # average entry price of signal traders
+    market_closes_at: datetime        # market resolution time
+    signal_strength: str              # "STRONG" / "MODERATE" / "WEAK"
     generated_at: datetime
 ```
 
-**Thresholds (configurable):**
-- `STRONG`: ≥ 70% of filtered traders agree
+**Thresholds (configurable, applied to weighted_consensus_pct):**
+- `STRONG`: ≥ 70% weighted consensus
 - `MODERATE`: 50–69%
 - `WEAK`: 35–49%
 - Below 35%: no signal generated
+- Minimum absolute floor: 3 traders required before any % threshold applied (`min_consensus_traders`)
+
+**Realistic signal pool:** Given 100 top traders spread across diverse Crypto markets, expect 3–8 traders per market/outcome bucket — this is expected behavior. The weighted PnL model compensates for small sample size: the 3–8 traders in a bucket are the highest-conviction, highest-performing ones. Example: "4 of 12 active traders on this market = 33% raw, but those 4 hold 71% of total weighted PnL → STRONG signal"
 
 **Time-window guard:**
 - Skip any market resolving in < 2 minutes (too late to enter)
@@ -224,7 +229,7 @@ class PaperTrade(BaseModel):
     entry_price: float
     stake: float                  # virtual dollars
     signal_strength: str
-    consensus_pct: float
+    weighted_consensus_pct: float
     trader_count: int
     status: Literal["OPEN", "CLOSED", "EXPIRED"]
     opened_at: datetime

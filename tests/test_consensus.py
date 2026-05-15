@@ -125,7 +125,7 @@ def test_detect_consensus_strong_signal():
     result = detect_consensus(_traders_with_position(8, 10))
     assert len(result) == 1
     assert result[0].signal_strength == "STRONG"
-    assert result[0].consensus_pct == pytest.approx(80.0)
+    assert result[0].raw_consensus_pct == pytest.approx(80.0)
 
 
 def test_detect_consensus_moderate_signal():
@@ -141,7 +141,8 @@ def test_detect_consensus_weak_signal():
 
 
 def test_detect_consensus_below_threshold_no_signal():
-    result = detect_consensus(_traders_with_position(3, 10))
+    # count=2 is below min_consensus_traders floor of 3, so no signal regardless of %
+    result = detect_consensus(_traders_with_position(2, 10))
     assert result == []
 
 
@@ -162,8 +163,9 @@ def test_detect_consensus_correct_trader_count():
 
 def test_detect_consensus_avg_entry_price():
     positions_by_trader = {
-        "0xA": [_make_position(entry_price=0.6)],
-        "0xB": [_make_position(entry_price=0.8)],
+        "0xA": [_make_position(entry_price=0.6, trader_address="0xA")],
+        "0xB": [_make_position(entry_price=0.8, trader_address="0xB")],
+        "0xC": [_make_position(entry_price=0.7, trader_address="0xC")],
     }
     result = detect_consensus(positions_by_trader)
     assert len(result) == 1
@@ -224,3 +226,53 @@ def test_detect_consensus_defaults_to_12h_when_no_metadata():
     pbt = _traders_with_position(8, 10)
     result = detect_consensus(pbt)
     assert len(result) == 1
+
+
+# --- new weighted consensus tests ---
+
+def test_weighted_consensus_uses_pnl_weights():
+    pbt = {}
+    for i in range(3):
+        addr = "0xHIGH" + str(i)
+        pbt[addr] = [_make_position(market_id="mkt-w", outcome="YES", trader_address=addr)]
+    for i in range(7):
+        pbt["0xLOW" + str(i)] = []
+    trader_pnl = {"0xHIGH" + str(i): 500.0 for i in range(3)}
+    for i in range(7):
+        trader_pnl["0xLOW" + str(i)] = 1.0
+    result = detect_consensus(pbt, trader_pnl=trader_pnl)
+    assert len(result) == 1
+    sig = result[0]
+    assert sig.signal_strength == "STRONG"
+    assert sig.raw_consensus_pct == pytest.approx(30.0)
+    assert sig.weighted_consensus_pct > 90.0
+
+
+def test_min_trader_floor_blocks_signal():
+    pbt = _traders_with_position(2, 2)
+    result = detect_consensus(pbt)
+    assert result == []
+
+
+def test_min_trader_floor_passes_at_3():
+    pbt = _traders_with_position(3, 3)
+    result = detect_consensus(pbt)
+    assert len(result) == 1
+    assert result[0].signal_strength == "STRONG"
+
+
+def test_equal_weights_when_no_pnl_map():
+    result = detect_consensus(_traders_with_position(8, 10))
+    assert len(result) == 1
+    sig = result[0]
+    assert sig.weighted_consensus_pct == pytest.approx(sig.raw_consensus_pct)
+
+
+def test_weighted_consensus_pct_field_present():
+    result = detect_consensus(_traders_with_position(8, 10))
+    assert len(result) == 1
+    sig = result[0]
+    assert hasattr(sig, "raw_consensus_pct")
+    assert hasattr(sig, "weighted_consensus_pct")
+    assert sig.raw_consensus_pct == pytest.approx(80.0)
+    assert sig.weighted_consensus_pct == pytest.approx(80.0)
