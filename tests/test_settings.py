@@ -8,10 +8,8 @@ def test_settings_defaults(monkeypatch):
     for var in [
         "POLYMARKET_API_BASE", "POLYMARKET_GAMMA_API", "POLYMARKET_DATA_API",
         "TRADER_CATEGORY", "TOP_TRADERS_LIMIT", "POLLING_INTERVAL_SECONDS",
-        "MIN_TRADES_30D", "MIN_AVG_POSITION_USD", "MIN_WIN_RATE",
-        "MIN_PNL_30D", "MIN_VOL", "MIN_OPEN_POSITIONS",
-        "MAX_SINGLE_TRADE_PNL_RATIO", "MIN_ACCOUNT_AGE_DAYS",
-        "MIN_MARKET_DIVERSITY", "LAST_ACTIVE_DAYS",
+        "MIN_TRADES", "MIN_PNL", "MIN_VOL", "MIN_OPEN_POSITIONS",
+        "MAX_SINGLE_TRADE_PNL_RATIO", "MIN_MARKET_DIVERSITY", "LAST_ACTIVE_DAYS",
         "CONSENSUS_STRONG_THRESHOLD", "CONSENSUS_MODERATE_THRESHOLD",
         "CONSENSUS_WEAK_THRESHOLD", "MIN_MARKET_TIME_REMAINING_SECONDS",
         "MAX_MARKET_HORIZON_HOURS", "PAPER_STAKE_PER_TRADE", "PAPER_CURRENCY",
@@ -22,17 +20,15 @@ def test_settings_defaults(monkeypatch):
     s = Settings()
     assert s.polymarket_api_base == "https://clob.polymarket.com"
     assert s.polymarket_gamma_api == "https://gamma-api.polymarket.com"
+    assert s.polymarket_data_api == "https://data-api.polymarket.com"
     assert s.trader_category == "Crypto"
     assert s.top_traders_limit == 50
     assert s.polling_interval_seconds == 30
-    assert s.min_trades_30d == 10
-    assert s.min_avg_position_usd == 50.0
-    assert s.polymarket_data_api == "https://data-api.polymarket.com"
-    assert s.min_pnl_30d == pytest.approx(0.0)
-    assert s.min_vol == pytest.approx(0.0)
-    assert s.min_open_positions == 0
+    assert s.min_trades == 5
+    assert s.min_pnl == pytest.approx(500.0)
+    assert s.min_vol == pytest.approx(1000.0)
+    assert s.min_open_positions == 1
     assert s.max_single_trade_pnl_ratio == pytest.approx(0.80)
-    assert s.min_account_age_days == 30
     assert s.min_market_diversity == 3
     assert s.last_active_days == 14
     assert s.consensus_strong_threshold == pytest.approx(0.70)
