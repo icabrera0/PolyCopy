@@ -7,7 +7,91 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 ## Overall Progress
 
 **Phase:** Paper Trading (Weeks 1–4)
-**Status:** ~90% complete — all core modules built, only tests remain.
+**Status:** Code complete (100 tests). Active work: API layer refactor (PolyCopy-43de).
+
+---
+
+## Current Task — API Refactor (PolyCopy-43de)
+
+**What:** Align all code with verified Polymarket API endpoints (spec v2.0).
+
+**Why:** Original spec referenced incorrect API structure. Real API has three separate backends and does NOT return `win_rate` from any endpoint.
+
+**Files being changed:**
+- `data/models.py` — add `vol: float`, `num_open_positions: int` to `Trader`; add `token_id: str` to `Position`
+- `config/settings.py` — remove `min_win_rate`, `min_avg_position_usd`, `min_account_age_days`; add `min_pnl`, `min_vol`, `min_trades`, `min_open_positions`; add `polymarket_clob_api`
+- `core/fetcher.py` — fix `/positions` → `/v1/positions`; add `get_trader_activity()`, `get_fill_price()`, `get_current_price()`; parse `vol` + `token_id` fields
+- `core/filter.py` — remove `_passes_win_rate`, `_passes_position_size`, `_passes_account_age`; add `_passes_min_pnl`, `_passes_min_vol`, `_passes_open_positions`; update `score_trader` (vol replaces win_rate)
+- `core/scheduler.py` — update pipeline to fetch activity before filtering
+
+**Overstory builder:** `builder-api-refactor` slinging PolyCopy-43de
+
+---
+
+## Verified API Architecture (spec v2.0)
+
+| API | Base URL | Purpose |
+|-----|----------|---------|
+| Data API | `https://data-api.polymarket.com` | Leaderboard, positions, activity |
+| Gamma API | `https://gamma-api.polymarket.com` | Market metadata (category, status) |
+| CLOB API | `https://clob.polymarket.com` | Fill price + unrealized PnL |
+
+### Leaderboard
+```
+GET https://data-api.polymarket.com/v1/leaderboard
+  ?category=CRYPTO&timePeriod=MONTH&orderBy=PNL&limit=100
+```
+Returns: `rank`, `proxyWallet`, `userName`, `pnl`, `vol` only.
+**No win rate, no trade count, no positions.**
+Pagination: caps at ~20/page → paginate with offset=0,20,40,60,80.
+
+### Positions
+```
+GET https://data-api.polymarket.com/v1/positions?user={proxyWallet}
+```
+Returns: `conditionId`, `asset` (=token_id), `outcome`, `avgPrice`, `size`, `title`, `slug`, `endDate`
+
+### Activity
+```
+GET https://data-api.polymarket.com/v1/activity?user={proxyWallet}&limit=50
+```
+Used for: `last_active` date (latest record), trade count (record count).
+
+### Market Metadata
+```
+GET https://gamma-api.polymarket.com/markets?conditionId={conditionId}
+```
+Used to: confirm Crypto tag, get `endDate`, confirm `active: true`.
+
+### Fill Price
+```
+GET https://clob.polymarket.com/last-trade-price?token_id={token_id}
+```
+Paper trade entry price. `token_id` = `asset` field from positions response.
+
+### Current Price
+```
+GET https://clob.polymarket.com/price?token_id={token_id}&side=BUY
+```
+Unrealized PnL tracking on open trades.
+
+---
+
+## Updated Filter Layer (spec v2.0)
+
+Win rate removed — not available from any API.
+
+| Filter | Source | Rule |
+|--------|--------|------|
+| Min PnL | Leaderboard `pnl` | > $500 |
+| Min volume | Leaderboard `vol` | > $1,000 |
+| Activity | Activity (latest timestamp) | Within 14 days |
+| Min trades | Activity (record count) | ≥ 5 |
+| Open positions | Positions (record count) | ≥ 1 |
+| PnL consistency | Activity data | Single trade < 80% of total PnL |
+| Diversity | Activity data | ≥ 3 distinct markets |
+
+Scoring: PnL 40%, volume 25%, activity 20%, diversity 15%
 
 ---
 
@@ -15,17 +99,17 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 
 | Module | File | Status | Notes |
 |--------|------|--------|-------|
-| Config | `config/settings.py` | ✅ Done | pydantic-settings, all .env vars |
-| Data Models | `data/models.py` | ✅ Done | Trader, Position, Market, Signal, PaperTrade, DailyStats |
+| Config | `config/settings.py` | ⏳ Needs update | Remove win_rate/position_size/account_age; add min_pnl/min_vol/clob_api |
+| Data Models | `data/models.py` | ⏳ Needs update | Add vol, num_open_positions to Trader; token_id to Position |
 | Database | `data/db.py` | ✅ Done | aiosqlite, all 5 tables, full CRUD |
-| Fetcher | `core/fetcher.py` | ✅ Done | async httpx, retry/backoff, 60s cache, concurrent gather |
-| Filter | `core/filter.py` | ✅ Done | 7 filters, composite scoring |
+| Fetcher | `core/fetcher.py` | ⏳ Needs update | Fix /v1/positions URL; add activity/fill/price endpoints |
+| Filter | `core/filter.py` | ⏳ Needs update | Replace win_rate/pos_size/account_age filters |
 | Consensus | `core/consensus.py` | ✅ Done | detect_consensus, STRONG/MODERATE/WEAK, time-window guard |
 | Trader | `core/trader.py` | ✅ Done | open/close PaperTrade, dedup check, expiry |
-| Scheduler | `core/scheduler.py` | ✅ Done | APScheduler pipeline loop every 30s |
+| Scheduler | `core/scheduler.py` | ⏳ Needs update | Add activity fetch step before filter |
 | Discord | `notifications/discord_webhook.py` | ✅ Done | embeds for open/close/status/daily summary |
 | Dashboard | `dashboard/app.py` | ✅ Done | Streamlit 6-page UI with plotly |
-| Tests | `tests/` | ⏳ Pending | pytest + pytest-asyncio (PolyCopy-4cde) |
+| Tests | `tests/` | ✅ Done | 100 tests passing |
 
 ---
 
@@ -38,8 +122,30 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 | PolyCopy-2be9 | Build core fetcher and filter modules | ✅ Closed |
 | PolyCopy-c6f1 | Build consensus engine and trader execution | ✅ Closed |
 | PolyCopy-d6ac | Build scheduler, Discord notifier, and Streamlit dashboard | ✅ Closed |
-| PolyCopy-4cde | Build test suite | ⏳ Open — next task |
+| PolyCopy-4cde | Build test suite | ✅ Closed |
 | PolyCopy-8922 | Create and maintain status.md | ✅ Closed |
+| PolyCopy-43de | Refactor API layer to verified Polymarket endpoints (v2 spec) | 🔄 In Progress |
+
+---
+
+## After PolyCopy-43de Completes
+
+If builder exits without committing (quality gate failure):
+```bash
+# Check worktree
+git -C overstory/builder-api-refactor/PolyCopy-43de status
+# Stage and commit manually
+git -C overstory/builder-api-refactor/PolyCopy-43de add data/models.py config/settings.py core/fetcher.py core/filter.py core/scheduler.py
+git -C overstory/builder-api-refactor/PolyCopy-43de commit -m "refactor: align API layer with verified Polymarket endpoints (spec v2.0)"
+# Then merge
+ov merge PolyCopy-43de
+```
+
+After merge, update tests:
+```bash
+pytest tests/ -v --asyncio-mode=auto
+```
+Then update `status.md` module table once all modules show ✅.
 
 ---
 
@@ -47,14 +153,10 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 
 - **Branch:** `master`
 - **Latest commit:** `feat: implement consensus, trader, scheduler, discord, dashboard, status.md`
-- **Stale worktrees (nothing useful, safe to clean):**
-  - `overstory/builder-consensus/PolyCopy-c6f1`
-  - `overstory/builder-scheduler/PolyCopy-d6ac`
-  - `overstory/builder-status/PolyCopy-8922`
 
 ---
 
-## To Run
+## To Run (post-refactor)
 
 ```bash
 # Install deps
@@ -62,7 +164,11 @@ pip install -r requirements.txt
 
 # Set env
 cp .env.example .env
-# Edit .env — set DISCORD_WEBHOOK_URL if desired
+# Required .env vars (v2.0):
+#   POLYMARKET_DATA_API=https://data-api.polymarket.com
+#   POLYMARKET_GAMMA_API=https://gamma-api.polymarket.com
+#   POLYMARKET_CLOB_API=https://clob.polymarket.com
+#   DISCORD_WEBHOOK_URL=<your webhook>
 
 # Run bot
 python -m core.scheduler
@@ -83,17 +189,6 @@ pytest tests/ -v --asyncio-mode=auto
 - **AI merge issue:** overstory AI resolver wrote meta-text into `data/models.py` — fixed manually; be careful with `ov merge` AI resolve on Python files
 - **Coordinator tmux:** does not start on this machine — using `ov sling` directly as coordinator instead
 - **Headless mode:** `claudeHeadlessByDefault: true` works; builders write code but old overlays hardcode `bun test` quality gates so they fail to commit — workaround: commit manually after sling
-
----
-
-## Next Steps
-
-1. **Write tests** — `ov sling PolyCopy-4cde --capability builder --name builder-tests --depth 1`
-   - Tests for: filter.py (all 7 filters), consensus.py (thresholds, time guards), trader.py (open/close/dedup), db.py (CRUD)
-2. **Verify imports** — run `python -c "from core.scheduler import main"` to catch any import errors
-3. **Clean stale worktrees** — `ov worktree clean --completed`
-4. **Set .env** — fill in `DISCORD_WEBHOOK_URL` and test notifications
-5. **Paper trading run** — start bot and monitor for 24h
 
 ---
 

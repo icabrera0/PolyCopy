@@ -17,7 +17,7 @@ def test_settings_defaults(monkeypatch):
         "LOG_LEVEL", "DB_PATH", "DASHBOARD_PORT",
     ]:
         monkeypatch.delenv(var, raising=False)
-    s = Settings()
+    s = Settings(_env_file=None)
     assert s.polymarket_api_base == "https://clob.polymarket.com"
     assert s.polymarket_gamma_api == "https://gamma-api.polymarket.com"
     assert s.polymarket_data_api == "https://data-api.polymarket.com"

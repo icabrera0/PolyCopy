@@ -62,22 +62,63 @@ polymarket-bot/
 
 **Responsibility:** Fetch leaderboard and active positions from the Polymarket API.
 
+**API Architecture (three separate backends):**
+
+| API | Base URL | Purpose |
+|---|---|---|
+| Data API | `https://data-api.polymarket.com` | Leaderboard, positions, activity |
+| Gamma API | `https://gamma-api.polymarket.com` | Market metadata (category, status) |
+| CLOB API | `https://clob.polymarket.com` | Live pricing (fill + unrealized PnL) |
+
+**Verified Endpoints:**
+
+- **Leaderboard** — Data API `GET /v1/leaderboard?category=CRYPTO&timePeriod=MONTH&orderBy=PNL&limit=100`
+  - Returns: `rank`, `proxyWallet`, `userName`, `pnl`, `vol` — nothing else
+  - ⚠ No win rate, trade count, or position data in this response
+  - ⚠ **Pagination:** API caps at ~20 results per page; paginate with `offset=0/20/40/60/80`, verify at runtime
+
+- **Positions** — Data API `GET /v1/positions?user={proxyWallet}`
+  - Returns: `conditionId`, `asset` (token_id), `outcome`, `avgPrice`, `size`, `title`, `slug`, `endDate`
+  - Does not filter by category — use Gamma API to confirm Crypto tag
+
+- **Activity** — Data API `GET /v1/activity?user={proxyWallet}&limit=50`
+  - Used to derive `last_active` date and trade frequency
+  - Record count ≈ trade count for min-trades filter
+
+- **Market metadata** — Gamma API `GET /markets?conditionId={conditionId}`
+  - Confirms Crypto tag, fetches `endDate`, confirms `active: true`
+
+- **Fill price** — CLOB API `GET /last-trade-price?token_id={token_id}`
+  - Paper trade entry price; `token_id` = `asset` field from positions response
+
+- **Current price** — CLOB API `GET /price?token_id={token_id}&side=BUY`
+  - Unrealized PnL tracking on open trades
+
 **Key functions:**
 - `get_top_traders(category: str, limit: int) -> list[Trader]`
-  - Hits the Polymarket Leaderboard API (CLOB or Gamma API)
-  - Filters by category: `"Crypto"`
-  - Returns top N traders sorted by 30-day profit (PnL)
-  - Fields to capture per trader: `address`, `username`, `total_pnl_30d`, `num_trades_30d`, `last_active_timestamp`, `win_rate`, `avg_position_size`
+  - Calls Data API leaderboard with automatic pagination (offsets 0/20/40/60/80)
+  - Returns traders sorted by monthly PnL; fields captured: `proxy_wallet`, `username`, `pnl`, `vol`
 
-- `get_active_positions(trader_address: str) -> list[Position]`
-  - Fetches currently open positions for a given wallet address
-  - Fields: `market_id`, `market_title`, `outcome`, `size`, `entry_price`, `timestamp_opened`
+- `get_active_positions(proxy_wallet: str) -> list[Position]`
+  - Calls Data API `GET /v1/positions?user={proxyWallet}`
+  - Position fields include `token_id` (from `asset`) needed for CLOB pricing
 
-- `get_market_metadata(market_id: str) -> Market`
-  - Fetches market resolution time, current price, and liquidity
+- `get_trader_activity(proxy_wallet: str) -> list[dict]`
+  - Calls Data API `GET /v1/activity?user={proxyWallet}&limit=50`
+  - Record count used for min-trades filter; latest record timestamp for last-active filter
+
+- `get_market_metadata(condition_id: str) -> Market`
+  - Calls Gamma API `GET /markets?conditionId={condition_id}`
+  - Confirms Crypto tag, active status, and resolution time; cached 60 seconds
+
+- `get_fill_price(token_id: str) -> float`
+  - Calls CLOB API `GET /last-trade-price?token_id={token_id}`; paper trade entry price
+
+- `get_current_price(token_id: str) -> float`
+  - Calls CLOB API `GET /price?token_id={token_id}&side=BUY`; unrealized PnL on open trades
 
 **Notes:**
-- Use `asyncio.gather` to fetch all 50 traders' positions concurrently
+- Use `asyncio.gather` to fetch positions + activity for all traders concurrently
 - Implement retry logic with exponential backoff (max 3 retries)
 - Cache market metadata for 60 seconds to reduce API calls
 - Respect Polymarket rate limits (add configurable delay between batches)
@@ -90,15 +131,17 @@ polymarket-bot/
 
 **Filter criteria (all configurable via `settings.py`):**
 
-| Filter | Default Rule | Reason |
-|---|---|---|
-| Activity | Last trade within 14 days | Remove inactive accounts |
-| Minimum trades | ≥ 10 trades in last 30 days | Remove low-sample accounts |
-| Position size | Avg position > $50 (notional) | Remove dust/smurf accounts |
-| Win rate floor | Win rate ≥ 40% | Remove lucky outliers with 1 big win |
-| PnL consistency | PnL not from a single trade > 80% of total | Detect single-trade flukes |
-| Account age | Wallet first trade > 30 days ago | Remove freshly created smurf wallets |
-| Diversity | Trades across ≥ 3 different markets | Remove single-market manipulators |
+> ⚠ Win rate is **not returned** by any Polymarket API endpoint — removed as a filter criterion.
+
+| Filter | Data Source | Default Rule | Reason |
+|---|---|---|---|
+| Minimum PnL | Leaderboard `pnl` field | > $500 | Exclude marginal/noise performers |
+| Minimum volume | Leaderboard `vol` field | > $1,000 | Exclude low-activity accounts |
+| Activity | Activity endpoint (latest record timestamp) | Last active within 14 days | Remove inactive accounts |
+| Minimum trades | Activity endpoint (record count) | ≥ 5 trades | Remove low-sample accounts |
+| Open positions | Positions endpoint (record count) | ≥ 1 open position | Only follow traders currently in the market |
+| PnL consistency | Derived from activity data | PnL not from a single trade > 80% of total | Detect single-trade flukes |
+| Diversity | Activity data (distinct markets) | Trades across ≥ 3 different markets | Remove single-market manipulators |
 
 **Key functions:**
 - `filter_traders(traders: list[Trader]) -> list[Trader]`
@@ -106,7 +149,7 @@ polymarket-bot/
   - Returns cleaned list with a `quality_score` (0–100) per trader
 
 - `score_trader(trader: Trader) -> float`
-  - Composite score weighting: PnL (40%), win rate (25%), activity (20%), diversity (15%)
+  - Composite score weighting: PnL (40%), volume (25%), activity (20%), diversity (15%)
 
 ---
 
@@ -199,16 +242,20 @@ class PaperTrade(BaseModel):
 
 **Pipeline (runs every N seconds, default 30s):**
 ```
-1. fetch_top_traders()
-2. filter_traders()
-3. gather all active positions concurrently (asyncio.gather)
-4. detect_consensus()
-5. for each new STRONG/MODERATE signal:
-   a. check if already have open trade on same market+outcome → skip if yes
-   b. open_trade()
-   c. send discord notification (TRADE OPENED)
-6. check_and_close_expired_trades()
-   a. for each newly closed trade → send discord notification (TRADE CLOSED)
+1. fetch_top_traders()              # Data API leaderboard (paginated)
+2. gather activity per trader       # Data API /v1/activity (for last_active + trade count)
+3. gather positions per trader      # Data API /v1/positions (for open position count)
+4. filter_traders()                 # apply 7 filters; all data now populated
+5. detect_consensus()               # group by market+outcome, emit Signals
+6. for each new STRONG/MODERATE signal:
+   a. get_market_metadata()         # Gamma API — confirm Crypto tag + active
+   b. get_fill_price()              # CLOB API — entry price for paper trade
+   c. check dedup (market+outcome already open?) → skip if yes
+   d. open_trade()
+   e. send discord notification (TRADE OPENED)
+7. check_and_close_expired_trades()
+   a. get_current_price()           # CLOB API — for PnL calculation
+   b. for each newly closed trade → send discord notification (TRADE CLOSED)
 ```
 
 **Performance targets:**
@@ -310,19 +357,20 @@ daily_stats      -- aggregated daily performance stats
 All settings loaded from `.env` file:
 
 ```env
-# Polymarket
-POLYMARKET_API_BASE=https://clob.polymarket.com
+# Polymarket APIs
+POLYMARKET_DATA_API=https://data-api.polymarket.com
 POLYMARKET_GAMMA_API=https://gamma-api.polymarket.com
-TRADER_CATEGORY=Crypto
-TOP_TRADERS_LIMIT=50
+POLYMARKET_CLOB_API=https://clob.polymarket.com
+TRADER_CATEGORY=CRYPTO
+TOP_TRADERS_LIMIT=100
 POLLING_INTERVAL_SECONDS=30
 
-# Filtering
-MIN_TRADES_30D=10
-MIN_AVG_POSITION_USD=50
-MIN_WIN_RATE=0.40
+# Filtering (win rate removed — not available from any API)
+MIN_PNL=500.0
+MIN_VOL=1000.0
+MIN_TRADES=5
+MIN_OPEN_POSITIONS=1
 MAX_SINGLE_TRADE_PNL_RATIO=0.80
-MIN_ACCOUNT_AGE_DAYS=30
 MIN_MARKET_DIVERSITY=3
 LAST_ACTIVE_DAYS=14
 
@@ -437,4 +485,4 @@ pytest-asyncio>=0.23
 
 ---
 
-*Spec version: 1.0 — Paper trading phase*
+*Spec version: 2.0 — API architecture corrected with verified endpoints (2026-05-14)*
