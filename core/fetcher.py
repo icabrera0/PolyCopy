@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import httpx
@@ -9,6 +10,8 @@ from loguru import logger
 
 from config.settings import settings
 from data.models import Market, Position, Trader
+
+_LEADERBOARD_PAGE_SIZE = 20
 
 _HTTP_TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 _MAX_RETRIES = 3
@@ -145,25 +148,50 @@ async def get_top_traders(
     category: str | None = None,
     limit: int | None = None,
 ) -> list[Trader]:
-    category = category or settings.trader_category
+    category = (category or settings.trader_category).upper()
     limit = limit or settings.top_traders_limit
 
-    url = f"{settings.polymarket_data_api}/leaderboard"
-    params = {"interval": "1m", "kind": "best", "limit": limit, "category": category.lower()}
+    url = f"{settings.polymarket_data_api}/v1/leaderboard"
+    pages_needed = (limit + _LEADERBOARD_PAGE_SIZE - 1) // _LEADERBOARD_PAGE_SIZE
+    base_params = {
+        "category": category,
+        "timePeriod": "MONTH",
+        "orderBy": "PNL",
+        "limit": _LEADERBOARD_PAGE_SIZE,
+    }
 
+    now = datetime.now(tz=timezone.utc)
     async with _make_client() as client:
+        tasks = [
+            _get_with_retry(client, url, params={**base_params, "offset": i * _LEADERBOARD_PAGE_SIZE})
+            for i in range(pages_needed)
+        ]
         try:
-            data = await _get_with_retry(client, url, params=params)
+            pages = await asyncio.gather(*tasks, return_exceptions=True)
         except Exception as exc:
             logger.error(f"get_top_traders failed: {exc}")
             return []
 
-    records: list[dict] = data if isinstance(data, list) else data.get("data", data.get("leaderboard", []))
+    records: list[dict] = []
+    for page in pages:
+        if isinstance(page, Exception):
+            logger.warning(f"Leaderboard page failed: {page}")
+            continue
+        page_records = page if isinstance(page, list) else page.get("data", page.get("leaderboard", []))
+        records.extend(page_records)
+
     traders: list[Trader] = []
     for raw in records[:limit]:
-        trader = _parse_trader(raw)
-        if trader:
-            traders.append(trader)
+        address = raw.get("proxyWallet") or raw.get("user") or raw.get("address", "")
+        if not address:
+            continue
+        traders.append(Trader(
+            address=str(address),
+            username=raw.get("userName") or raw.get("name") or raw.get("xUsername"),
+            total_pnl_30d=float(raw.get("pnl") or 0.0),
+            vol=float(raw.get("vol") or raw.get("volume") or 0.0),
+            last_active_timestamp=now,  # placeholder; enriched from activity in pipeline
+        ))
 
     logger.info(f"Fetched {len(traders)} traders from leaderboard")
     return traders
@@ -235,9 +263,9 @@ async def fetch_all_positions(traders: list[Trader]) -> dict[str, list[Position]
 
 
 async def get_trader_activity(address: str) -> dict:
-    """Fetch recent trading activity for a trader; returns vol and num_open_positions."""
-    url = f"{settings.polymarket_data_api}/activity"
-    params = {"user": address, "limit": 100}
+    """Fetch recent trading activity; returns last_active, num_trades_30d, num_markets_traded."""
+    url = f"{settings.polymarket_data_api}/v1/activity"
+    params = {"user": address, "limit": 50}
 
     async with _make_client() as client:
         try:
@@ -247,15 +275,44 @@ async def get_trader_activity(address: str) -> dict:
             return {}
 
     records: list[dict] = data if isinstance(data, list) else data.get("data", data.get("activity", []))
+    if not records:
+        return {}
 
-    vol = sum(float(r.get("amount") or r.get("size") or r.get("volume") or 0.0) for r in records)
-    open_ids: set[str] = {
-        str(r.get("conditionId") or r.get("market_id") or r.get("marketId") or "")
-        for r in records
-        if r.get("outcome") or r.get("side")
-    } - {""}
+    now = datetime.now(tz=timezone.utc)
+    cutoff_30d = now - timedelta(days=30)
 
-    return {"vol": vol, "num_open_positions": len(open_ids)}
+    last_active: datetime | None = None
+    num_trades_30d = 0
+    market_ids: set[str] = set()
+
+    for r in records:
+        ts_raw = r.get("timestamp") or r.get("createdAt") or r.get("time")
+        ts: datetime | None = None
+        if ts_raw is not None:
+            try:
+                if isinstance(ts_raw, (int, float)):
+                    ts = datetime.fromtimestamp(float(ts_raw), tz=timezone.utc)
+                else:
+                    ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
+            except Exception:
+                pass
+
+        if ts:
+            if last_active is None or ts > last_active:
+                last_active = ts
+            if ts >= cutoff_30d:
+                num_trades_30d += 1
+
+        mid = str(r.get("conditionId") or r.get("market_id") or r.get("marketId") or "")
+        if mid:
+            market_ids.add(mid)
+
+    return {
+        "last_active_timestamp": last_active or now,
+        "num_trades_30d": num_trades_30d,
+        "num_markets_traded": len(market_ids),
+        "num_open_positions": len(market_ids),  # approximation until positions fetch
+    }
 
 
 async def get_fill_price(token_id: str) -> float | None:

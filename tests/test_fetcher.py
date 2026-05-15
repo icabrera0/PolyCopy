@@ -184,7 +184,7 @@ async def test_get_top_traders_success():
         mock_client.get = AsyncMock(return_value=mock_resp)
         mock_make_client.return_value = mock_client
 
-        traders = await get_top_traders(category="Crypto", limit=50)
+        traders = await get_top_traders(category="Crypto", limit=3)
 
     assert len(traders) == 3
     assert all(isinstance(t, Trader) for t in traders)
@@ -353,9 +353,11 @@ async def test_fetch_all_positions_concurrent():
 @pytest.mark.asyncio
 async def test_get_trader_activity_success():
     from core.fetcher import get_trader_activity
+    import time
+    now_ts = int(time.time())
     raw_list = [
-        {"conditionId": "mkt-1", "outcome": "YES", "amount": 100.0},
-        {"conditionId": "mkt-2", "outcome": "NO", "amount": 50.0},
+        {"conditionId": "mkt-1", "timestamp": now_ts - 3600, "usdcSize": 100.0},
+        {"conditionId": "mkt-2", "timestamp": now_ts - 7200, "usdcSize": 50.0},
     ]
     mock_resp = MagicMock()
     mock_resp.raise_for_status = MagicMock()
@@ -370,8 +372,10 @@ async def test_get_trader_activity_success():
 
         result = await get_trader_activity("0xABC")
 
-    assert result["vol"] == pytest.approx(150.0)
+    assert result["num_trades_30d"] == 2
+    assert result["num_markets_traded"] == 2
     assert result["num_open_positions"] == 2
+    assert "last_active_timestamp" in result
 
 
 @pytest.mark.asyncio

@@ -26,13 +26,15 @@ async def run_pipeline() -> None:
             logger.warning("No traders fetched, skipping tick")
             return
 
-        # 2. Enrich traders with activity data (vol, num_open_positions)
+        # 2. Enrich traders with activity data
         activities = await fetch_all_activities(traders)
         traders = [
-            t.model_copy(update={
-                "vol": activities.get(t.address, {}).get("vol", 0.0),
-                "num_open_positions": activities.get(t.address, {}).get("num_open_positions", 0),
-            })
+            t.model_copy(update={k: v for k, v in {
+                "last_active_timestamp": activities.get(t.address, {}).get("last_active_timestamp"),
+                "num_trades_30d": activities.get(t.address, {}).get("num_trades_30d"),
+                "num_markets_traded": activities.get(t.address, {}).get("num_markets_traded"),
+                "num_open_positions": activities.get(t.address, {}).get("num_open_positions"),
+            }.items() if v is not None})
             for t in traders
         ]
 
