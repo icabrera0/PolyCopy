@@ -7,24 +7,13 @@ _Last updated: 2026-05-14 — update this file after every significant change._
 ## Overall Progress
 
 **Phase:** Paper Trading (Weeks 1–4)
-**Status:** Code complete (100 tests). Active work: API layer refactor (PolyCopy-43de).
+**Status:** Code complete (104 tests passing). API layer refactor complete (PolyCopy-43de ✅).
 
 ---
 
-## Current Task — API Refactor (PolyCopy-43de)
+## Completed Task — API Refactor (PolyCopy-43de) ✅
 
-**What:** Align all code with verified Polymarket API endpoints (spec v2.0).
-
-**Why:** Original spec referenced incorrect API structure. Real API has three separate backends and does NOT return `win_rate` from any endpoint.
-
-**Files being changed:**
-- `data/models.py` — add `vol: float`, `num_open_positions: int` to `Trader`; add `token_id: str` to `Position`
-- `config/settings.py` — remove `min_win_rate`, `min_avg_position_usd`, `min_account_age_days`; add `min_pnl`, `min_vol`, `min_trades`, `min_open_positions`; add `polymarket_clob_api`
-- `core/fetcher.py` — fix `/positions` → `/v1/positions`; add `get_trader_activity()`, `get_fill_price()`, `get_current_price()`; parse `vol` + `token_id` fields
-- `core/filter.py` — remove `_passes_win_rate`, `_passes_position_size`, `_passes_account_age`; add `_passes_min_pnl`, `_passes_min_vol`, `_passes_open_positions`; update `score_trader` (vol replaces win_rate)
-- `core/scheduler.py` — update pipeline to fetch activity before filtering
-
-**Overstory builder:** `builder-api-refactor` slinging PolyCopy-43de
+All modules aligned to verified Polymarket API endpoints (spec v2.0). 104 tests passing.
 
 ---
 
@@ -99,17 +88,17 @@ Scoring: PnL 40%, volume 25%, activity 20%, diversity 15%
 
 | Module | File | Status | Notes |
 |--------|------|--------|-------|
-| Config | `config/settings.py` | ⏳ Needs update | Remove win_rate/position_size/account_age; add min_pnl/min_vol/clob_api |
-| Data Models | `data/models.py` | ⏳ Needs update | Add vol, num_open_positions to Trader; token_id to Position |
+| Config | `config/settings.py` | ✅ Done | min_pnl/min_vol/min_trades/min_open_positions; three API base URLs |
+| Data Models | `data/models.py` | ✅ Done | Trader has vol, num_open_positions; flexible parser |
 | Database | `data/db.py` | ✅ Done | aiosqlite, all 5 tables, full CRUD |
-| Fetcher | `core/fetcher.py` | ⏳ Needs update | Fix /v1/positions URL; add activity/fill/price endpoints |
-| Filter | `core/filter.py` | ⏳ Needs update | Replace win_rate/pos_size/account_age filters |
+| Fetcher | `core/fetcher.py` | ✅ Done | /v1/positions; get_trader_activity, get_fill_price, get_current_price |
+| Filter | `core/filter.py` | ✅ Done | 7 filters (no win_rate/pos_size/account_age); PnL 40%/vol 25%/activity 20%/diversity 15% scoring |
 | Consensus | `core/consensus.py` | ✅ Done | detect_consensus, STRONG/MODERATE/WEAK, time-window guard |
 | Trader | `core/trader.py` | ✅ Done | open/close PaperTrade, dedup check, expiry |
-| Scheduler | `core/scheduler.py` | ⏳ Needs update | Add activity fetch step before filter |
+| Scheduler | `core/scheduler.py` | ✅ Done | fetch_all_activities enriches traders before filter |
 | Discord | `notifications/discord_webhook.py` | ✅ Done | embeds for open/close/status/daily summary |
 | Dashboard | `dashboard/app.py` | ✅ Done | Streamlit 6-page UI with plotly |
-| Tests | `tests/` | ✅ Done | 100 tests passing |
+| Tests | `tests/` | ✅ Done | 104 tests passing |
 
 ---
 
@@ -124,7 +113,7 @@ Scoring: PnL 40%, volume 25%, activity 20%, diversity 15%
 | PolyCopy-d6ac | Build scheduler, Discord notifier, and Streamlit dashboard | ✅ Closed |
 | PolyCopy-4cde | Build test suite | ✅ Closed |
 | PolyCopy-8922 | Create and maintain status.md | ✅ Closed |
-| PolyCopy-43de | Refactor API layer to verified Polymarket endpoints (v2 spec) | 🔄 In Progress |
+| PolyCopy-43de | Refactor API layer to verified Polymarket endpoints (v2 spec) | ✅ Closed |
 
 ---
 
